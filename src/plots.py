@@ -17,8 +17,11 @@ def plot_drug_coefficients(drug: str, coef_data: pd.DataFrame,
                            output_dir: str = "plots",
                            show_legend: bool = True,
                            mutations_order: Optional[List[str]] = None,
-                           y_limits: Optional[Tuple[float, float]] = None) -> str:
-    os.makedirs(output_dir, exist_ok=True)
+                           y_limits: Optional[Tuple[float, float]] = None,
+                           ax: Optional[plt.Axes] = None,
+                           show_mutation_labels: bool = True) -> Optional[str]:
+    if ax is None:
+        os.makedirs(output_dir, exist_ok=True)
 
     data = coef_data.copy()
     if mutations_order is not None:
@@ -67,7 +70,12 @@ def plot_drug_coefficients(drug: str, coef_data: pd.DataFrame,
         y_range = y_max - y_min
         y_limits = (y_min - 0.1 * y_range, y_max + 0.1 * y_range) if y_range else (-0.1, 0.1)
 
-    fig, ax = plt.subplots(figsize=(12, 4))
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 4))
+        created_fig = True
+    else:
+        fig = ax.figure
 
     x_pos = np.arange(len(mutations))
     if has_lars:
@@ -94,13 +102,20 @@ def plot_drug_coefficients(drug: str, coef_data: pd.DataFrame,
         )
 
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
-    ax.set_ylabel('Coefficient', fontsize=10)
-    ax.set_title(drug, fontsize=12, fontweight='bold')
+    ax.set_ylabel('Coefficient', fontsize=18)
+    ax.set_title(drug, fontsize=24, fontweight='bold')
     ax.set_ylim(y_limits)
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(mutations, rotation=90)
+    if show_mutation_labels:
+        ax.set_xticklabels(mutations, rotation=90, fontsize=11)
+    else:
+        ax.set_xticklabels([''] * len(x_pos))
     ax.grid(axis='y', alpha=0.3, linestyle='--')
-    ax.tick_params(axis='both', labelsize=8)
+    ax.tick_params(axis='y', labelsize=8)
+    if show_mutation_labels:
+        ax.tick_params(axis='x', labelsize=11, labelbottom=True)
+    else:
+        ax.tick_params(axis='x', labelbottom=False, length=0)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_visible(False)
@@ -125,11 +140,57 @@ def plot_drug_coefficients(drug: str, coef_data: pd.DataFrame,
             fontsize=8, framealpha=0.9, borderaxespad=0
         )
 
-    fig.tight_layout(rect=[0, 0, 0.88 if show_legend else 1, 1])
-    plot_path = os.path.join(output_dir, f"coefficients_{drug}.png")
-    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    if created_fig:
+        fig.tight_layout(rect=[0, 0, 0.88 if show_legend else 1, 1])
+        plot_path = os.path.join(output_dir, f"coefficients_{drug}.png")
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        return plot_path
+    return None
+
+
+def plot_class_coefficient_stack(
+        drug_class: str,
+        drug_data: Dict[str, pd.DataFrame],
+        ols_mse_lookup: Dict[str, Optional[float]],
+        lars_mse_lookup: Dict[str, Optional[float]],
+        output_path: str,
+        mutations_order: Optional[List[str]] = None,
+        y_limits: Optional[Tuple[float, float]] = None,
+        show_legend: bool = False) -> None:
+    """Render stacked coefficient plots for a drug class."""
+    if not drug_data:
+        warnings.warn(f"No coefficient data available to stack for '{drug_class}'.")
+        return
+
+    sorted_drugs = sorted(drug_data.keys())
+    n = len(sorted_drugs)
+    fig_height = max(4, n * 3)
+    fig, axes = plt.subplots(n, 1, figsize=(12, fig_height), sharex=True)
+    if n == 1:
+        axes = [axes]
+
+    for idx, (drug, ax) in enumerate(zip(sorted_drugs, axes)):
+        show_labels = idx == n - 1
+        plot_drug_coefficients(
+            drug=drug,
+            coef_data=drug_data[drug],
+            ols_mse=ols_mse_lookup.get(drug),
+            lars_mse=lars_mse_lookup.get(drug),
+            output_dir=os.path.dirname(output_path),
+            show_legend=show_legend and show_labels,
+            mutations_order=mutations_order,
+            y_limits=y_limits,
+            ax=ax,
+            show_mutation_labels=show_labels
+        )
+        if not show_labels:
+            ax.set_xlabel("")
+
+    fig.suptitle(f"{drug_class} Coefficients", fontsize=18, fontweight='bold')
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
-    return plot_path
 
 
 def plot_benchmark_mse(perf_long: pd.DataFrame, output_path: str) -> None:
@@ -239,11 +300,13 @@ def plot_benchmark_coefficients(coeff_df: pd.DataFrame, model: str,
             color='slateblue', edgecolor='black', linewidth=0.5
         )
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(sub['Mutation'], rotation=90)
+        ax.set_xticklabels(sub['Mutation'], rotation=90, fontsize=11)
         ax.axhline(0, color='black', linewidth=0.8)
         ax.set_ylabel('Coefficient', fontsize=10)
         ax.set_title(drug, fontsize=12, fontweight='bold')
         ax.grid(axis='y', linestyle='--', alpha=0.3)
+        ax.tick_params(axis='y', labelsize=8)
+        ax.tick_params(axis='x', labelsize=11)
 
     for ax in axes[len(drugs):]:
         ax.axis('off')

@@ -16,7 +16,8 @@ from .models import fit_ols_model, cross_validate_model, fit_lasso_model
 from .plots import (
     plot_drug_coefficients,
     plot_benchmark_mse,
-    plot_benchmark_coefficients
+    plot_benchmark_coefficients,
+    plot_class_coefficient_stack
 )
 from .results import (
     prepare_drug_class_results,
@@ -88,6 +89,9 @@ def DRMcv(min_muts: int = 5, nfold: int = 5, nrep: int = 10,
         complete_df, positions_df = load_dataset(drug_class)
         all_ols_coefs = []
         all_lars_coefs = []
+        paper_plot_data: Dict[str, pd.DataFrame] = {}
+        paper_ols_lookup: Dict[str, Optional[float]] = {}
+        paper_lars_lookup: Dict[str, Optional[float]] = {}
 
         for drug in drugs_to_process:
             if drug in drm_lists:
@@ -273,7 +277,26 @@ def DRMcv(min_muts: int = 5, nfold: int = 5, nrep: int = 10,
                         mutations_order=mutation_order,
                         y_limits=class_y_limits
                     )
-                    print(f"  - {plot_path}")
+                    if plot_path:
+                        print(f"  - {plot_path}")
+                    if paper_mode:
+                        paper_plot_data[drug] = drug_data.copy()
+                        paper_ols_lookup[drug] = ols_mse
+                        paper_lars_lookup[drug] = lars_mse
+
+                if paper_mode and paper_plot_data:
+                    stacked_path = os.path.join(plots_dir, f"{drug_class}.png")
+                    plot_class_coefficient_stack(
+                        drug_class=drug_class,
+                        drug_data=paper_plot_data,
+                        ols_mse_lookup=paper_ols_lookup,
+                        lars_mse_lookup=paper_lars_lookup,
+                        output_path=stacked_path,
+                        mutations_order=mutation_order,
+                        y_limits=class_y_limits,
+                        show_legend=show_legend
+                    )
+                    print(f"  - {stacked_path}")
 
     if generate_outputs and all_performance_data:
         perf_file = save_performance_metrics(all_performance_data, output_dir=results_dir)
